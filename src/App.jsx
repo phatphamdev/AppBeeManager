@@ -5,9 +5,11 @@ import { AuthProvider } from './contexts/AuthContext.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 
 // Pages
-import LoginPage      from './pages/LoginPage.jsx';
-import AdminLayout    from './pages/admin/AdminLayout.jsx';
-import ShipperLayout  from './pages/shipper/ShipperLayout.jsx';
+import LoginPage     from './pages/LoginPage.jsx';
+import RegisterPage  from './pages/RegisterPage.jsx';
+import AdminLayout   from './pages/admin/AdminLayout.jsx';
+import ShipperLayout from './pages/shipper/ShipperLayout.jsx';
+import CustomerLayout from './pages/customer/CustomerLayout.jsx';
 
 export default function App() {
   return (
@@ -15,8 +17,9 @@ export default function App() {
       <HashRouter>
         <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
           <Routes>
-            {/* Trang đăng nhập */}
-            <Route path="/login" element={<LoginPage />} />
+            {/* Trang đăng nhập & đăng ký — public */}
+            <Route path="/login"    element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
 
             {/* Admin — chỉ role ADMIN */}
             <Route
@@ -34,6 +37,16 @@ export default function App() {
               element={
                 <ProtectedRoute allowedRole="SHIPPER">
                   <ShipperLayout />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Customer — role CUSTOMER */}
+            <Route
+              path="/customer/*"
+              element={
+                <ProtectedRoute allowedRole="CUSTOMER">
+                  <CustomerLayout />
                 </ProtectedRoute>
               }
             />

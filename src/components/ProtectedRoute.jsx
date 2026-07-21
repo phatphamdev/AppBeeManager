@@ -43,8 +43,9 @@ export default function ProtectedRoute({ children, allowedRole = null }) {
 
   /* ── Sai role → redirect về trang phù hợp ────────────── */
   if (allowedRole && role !== allowedRole) {
-    if (role === 'ADMIN')   return <Navigate to="/admin/dashboard" replace />;
-    if (role === 'SHIPPER') return <Navigate to="/shipper/workspace" replace />;
+    if (role === 'ADMIN')    return <Navigate to="/admin/dashboard" replace />;
+    if (role === 'SHIPPER')  return <Navigate to="/shipper/workspace" replace />;
+    if (role === 'CUSTOMER') return <Navigate to="/customer/home" replace />;
     // Role chưa được gán
     return <Navigate to="/login" replace />;
   }

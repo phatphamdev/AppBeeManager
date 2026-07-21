@@ -2,6 +2,9 @@
    AppBeeManager — BeeShip Module Global Styles
    ============================================================ */
 
+/* Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
 /* Leaflet z-index override */
 .leaflet-pane { z-index: 1; }
 .leaflet-top, .leaflet-bottom { z-index: 2; }
@@ -16,6 +19,7 @@
 }
 .leaflet-popup-tip { background: #1e1e2e; }
 
+/* ── Reset ─────────────────────────────────────────────── */
 *, *::before, *::after {
   box-sizing: border-box;
 }
@@ -32,15 +36,30 @@ body {
   color: #f1f0ef;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Safe area for notch devices */
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
-/* Scrollbar dark styling */
+/* ── Mobile touch improvements ─────────────────────────── */
+button, a, [role="button"] {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Minimum tap target 44px for accessibility */
+.MuiBottomNavigationAction-root {
+  min-height: 44px;
+}
+
+/* ── Scrollbar dark styling ────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: #1a1a24; }
 ::-webkit-scrollbar-thumb { background: #3a3a50; border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: #f59e0b; }
 
-/* Goong/Google Autocomplete dropdown override */
+/* ── Goong/Google Autocomplete dropdown ─────────────────── */
 .pac-container {
   background-color: #1e1e2e !important;
   border: 1px solid rgba(241, 240, 239, 0.12) !important;
@@ -48,12 +67,15 @@ body {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
   font-family: 'Inter', sans-serif !important;
   margin-top: 4px;
+  /* Fix autocomplete z-index on mobile */
+  z-index: 9999 !important;
 }
 .pac-item {
   background-color: #1e1e2e !important;
   color: #f1f0ef !important;
   border-top: 1px solid rgba(241, 240, 239, 0.06) !important;
-  padding: 10px 14px !important;
+  /* Larger touch target on mobile */
+  padding: 12px 14px !important;
   cursor: pointer;
   font-size: 0.875rem;
   transition: background 0.15s;
@@ -63,11 +85,11 @@ body {
 .pac-matched { color: #fcd34d !important; font-weight: 700; }
 .pac-icon { filter: brightness(0) invert(0.7); }
 
-/* DevExtreme dark theme override */
+/* ── DevExtreme dark theme override ────────────────────── */
 .dx-datagrid { background: transparent !important; }
 .dx-datagrid-headers { border-bottom: 1px solid rgba(241, 240, 239, 0.1) !important; }
 
-/* Page fade-in animation */
+/* ── Page animations ────────────────────────────────────── */
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(16px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -88,3 +110,55 @@ body {
   to   { opacity: 1; transform: translateY(0); }
 }
 .chat-bubble { animation: chatIn 0.2s ease forwards; }
+
+/* ── Mobile Responsive Overrides ───────────────────────── */
+@media (max-width: 600px) {
+  /* Tighter padding on mobile */
+  .MuiContainer-root {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+
+  /* Larger font for readability */
+  .MuiTypography-body2 {
+    font-size: 0.9rem;
+  }
+
+  /* Full-width dialogs on mobile */
+  .MuiDialog-paper {
+    margin: 12px !important;
+    max-height: calc(100% - 24px) !important;
+  }
+
+  /* Bottom sheet style for dialogs */
+  .MuiDialog-paperScrollPaper {
+    border-radius: 16px 16px 0 0 !important;
+    position: fixed !important;
+    bottom: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+}
+
+/* ── Customer portal specific ───────────────────────────── */
+/* Service card hover on mobile: no transform (use press effect instead) */
+@media (hover: none) {
+  .service-card:hover {
+    transform: none !important;
+  }
+  .service-card:active {
+    transform: scale(0.97) !important;
+    transition: transform 0.1s ease !important;
+  }
+}
+
+/* ── Stepper mobile compact ─────────────────────────────── */
+@media (max-width: 480px) {
+  .MuiStepLabel-label {
+    font-size: 0.65rem !important;
+  }
+  .MuiStepConnector-line {
+    border-color: rgba(241,240,239,0.15) !important;
+  }
+}

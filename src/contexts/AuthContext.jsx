@@ -18,7 +18,7 @@ export function useAuth() {
  */
 export function AuthProvider({ children }) {
   const [user, setUser]       = useState(null);
-  const [role, setRole]       = useState(null);   // 'ADMIN' | 'SHIPPER' | null
+  const [role, setRole]       = useState(null);   // 'ADMIN' | 'SHIPPER' | 'CUSTOMER' | null
   const [loading, setLoading] = useState(true);
 
   /* ── Fetch role từ bảng user_roles ──────────────────────── */

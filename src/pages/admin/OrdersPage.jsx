@@ -1,11 +1,16 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Box, Container, Typography, Card, CardContent,
-  Alert, Chip, CircularProgress, Button, Select, MenuItem, FormControl, InputLabel, Grid
+  Alert, Chip, CircularProgress, Button, Select, MenuItem,
+  FormControl, InputLabel, Grid, Dialog, DialogTitle,
+  DialogContent, DialogActions, Avatar, Tooltip,
 } from '@mui/material';
 import AssignmentRoundedIcon   from '@mui/icons-material/AssignmentRounded';
 import QrCodeRoundedIcon       from '@mui/icons-material/QrCodeRounded';
 import FiberManualRecordIcon   from '@mui/icons-material/FiberManualRecord';
+import PersonPinRoundedIcon    from '@mui/icons-material/PersonPinRounded';
+import BroadcastOnHomeRoundedIcon from '@mui/icons-material/BroadcastOnHomeRounded';
+import NearMeRoundedIcon       from '@mui/icons-material/NearMeRounded';
 import DataGrid, {
   Column, Sorting, FilterRow, Pager, Paging,
 } from 'devextreme-react/data-grid';
@@ -13,7 +18,16 @@ import { supabase }           from '../../supabaseClient.js';
 import { VietQRDialog }       from '../../components/VietQR.jsx';
 import { gridSx, formatVND } from '../../utils/shared.jsx';
 
-
+/* ── Haversine distance (km) ─────────────────────── */
+function haversine(lat1, lon1, lat2, lon2) {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return null;
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.asin(Math.sqrt(a));
+}
 
 /* ── Status config ─────────────────────────────────────────── */
 const ORDER_STATUS = {
@@ -37,16 +51,220 @@ function CurrencyCell({ value }) {
   return <span style={{ color: '#fcd34d', fontWeight: 600 }}>{formatVND(value)}</span>;
 }
 
+/* ══════════════════════════════════════════════════
+   Dialog Phân Đơn
+══════════════════════════════════════════════════ */
+function DispatchDialog({ order, open, onClose, onDispatched }) {
+  const [drivers, setDrivers]       = useState([]);
+  const [loading, setLoading]       = useState(false);
+  const [dispatching, setDispatching] = useState(false);
+  const [error, setError]           = useState('');
 
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    supabase
+      .from('drivers')
+      .select('*')
+      .neq('status', 'OFFLINE')
+      .then(({ data }) => {
+        // Gắn khoảng cách nếu đơn có tọa độ
+        const enriched = (data || []).map(d => {
+          const dist = (order.origin_lat && d.latitude)
+            ? haversine(order.origin_lat, order.origin_lng, d.latitude, d.longitude)
+            : null;
+          return { ...d, distKm: dist };
+        });
+        // Sort: có GPS gần nhất lên đầu, không có GPS xuống cuối
+        enriched.sort((a, b) => {
+          if (a.distKm !== null && b.distKm !== null) return a.distKm - b.distKm;
+          if (a.distKm !== null) return -1;
+          if (b.distKm !== null) return 1;
+          return 0;
+        });
+        setDrivers(enriched);
+        setLoading(false);
+      });
+  }, [open, order]);
 
+  const dispatch = async (driverId) => {
+    setDispatching(true);
+    setError('');
+    try {
+      // Cập nhật đơn
+      const { error: oErr } = await supabase
+        .from('orders')
+        .update({
+          driver_id: driverId || null,
+          status:    driverId ? 'ACCEPTED' : 'PENDING',
+        })
+        .eq('id', order.id);
+      if (oErr) throw oErr;
 
+      // Nếu gán tài xế, update status tài xế
+      if (driverId) {
+        await supabase
+          .from('drivers')
+          .update({ status: 'PICKING_UP' })
+          .eq('id', driverId);
+      }
 
+      onDispatched();
+      onClose();
+    } catch (e) {
+      setError(e.message || 'Lỗi phân đơn');
+    } finally {
+      setDispatching(false);
+    }
+  };
+
+  const DRIVER_STATUS_LABEL = {
+    IDLE:       { label: 'Sẵn sàng',  color: '#4ade80' },
+    PICKING_UP: { label: 'Đang đón',  color: '#fb923c' },
+    DELIVERING: { label: 'Đang giao', color: '#f87171' },
+    OFFLINE:    { label: 'Ngoại tuyến', color: '#a09d9a' },
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      maxWidth="sm"
+      fullWidth
+      PaperProps={{ sx: { bgcolor: 'background.paper', border: '1px solid rgba(245,158,11,0.2)' } }}
+    >
+      <DialogTitle sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+        <PersonPinRoundedIcon sx={{ color: 'primary.main' }} />
+        Phân đơn cho Shipper
+      </DialogTitle>
+      <DialogContent>
+        {/* Thông tin đơn */}
+        <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)', mb: 2 }}>
+          <Typography variant="caption" color="text.disabled" display="block" mb={0.5}>Đơn hàng</Typography>
+          {order.service_name && (
+            <Chip label={order.service_name} size="small"
+              sx={{ mb: 0.75, fontSize: '0.68rem', bgcolor: 'rgba(245,158,11,0.12)', color: 'primary.main', fontWeight: 700 }} />
+          )}
+          <Typography variant="body2" fontWeight={600}>{order.customer_phone}</Typography>
+          <Typography variant="caption" color="text.secondary">📍 {order.origin}</Typography>
+          <Typography variant="caption" color="text.secondary" display="block">🏁 {order.destination}</Typography>
+          <Typography variant="body2" fontWeight={700} color="primary.main" mt={0.5}>{formatVND(order.price)}</Typography>
+        </Box>
+
+        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+
+        <Typography variant="subtitle2" fontWeight={700} mb={1.5}>Chọn shipper:</Typography>
+
+        {loading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+            <CircularProgress sx={{ color: 'primary.main' }} />
+          </Box>
+        ) : (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+            {/* Broadcast option */}
+            <Card
+              variant="outlined"
+              sx={{
+                border: '1px solid rgba(6,182,212,0.3)',
+                background: 'rgba(6,182,212,0.05)',
+                cursor: 'pointer',
+                '&:hover': { background: 'rgba(6,182,212,0.1)' },
+              }}
+              onClick={() => dispatch(null)}
+            >
+              <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 }, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <BroadcastOnHomeRoundedIcon sx={{ color: 'secondary.main', fontSize: 28 }} />
+                <Box sx={{ flex: 1 }}>
+                  <Typography variant="subtitle2" fontWeight={700} color="secondary.main">
+                    📡 Broadcast — Tất cả shipper
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Gửi đến tất cả shipper, ai nhận trước được việc
+                  </Typography>
+                </Box>
+                {dispatching && <CircularProgress size={18} />}
+              </CardContent>
+            </Card>
+
+            {drivers.length === 0 && (
+              <Alert severity="warning" variant="outlined">Không có shipper nào đang hoạt động.</Alert>
+            )}
+
+            {/* Shipper list */}
+            {drivers.map((d, idx) => {
+              const stCfg = DRIVER_STATUS_LABEL[d.status] || DRIVER_STATUS_LABEL.OFFLINE;
+              return (
+                <Card
+                  key={d.id}
+                  variant="outlined"
+                  sx={{
+                    cursor: 'pointer',
+                    border: idx === 0 && d.distKm !== null
+                      ? '1px solid rgba(74,222,128,0.4)'
+                      : '1px solid rgba(241,240,239,0.1)',
+                    background: idx === 0 && d.distKm !== null
+                      ? 'rgba(74,222,128,0.05)'
+                      : 'transparent',
+                    transition: 'all 0.15s',
+                    '&:hover': { background: 'rgba(245,158,11,0.05)', borderColor: 'rgba(245,158,11,0.3)' },
+                  }}
+                  onClick={() => dispatch(d.id)}
+                >
+                  <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 }, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                    <Avatar sx={{ width: 36, height: 36, bgcolor: 'rgba(245,158,11,0.15)', color: 'primary.main', fontSize: '0.85rem' }}>
+                      {d.full_name?.[0]}
+                    </Avatar>
+                    <Box sx={{ flex: 1 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography variant="subtitle2" fontWeight={700}>{d.full_name}</Typography>
+                        {idx === 0 && d.distKm !== null && (
+                          <Chip label="🏆 Gần nhất" size="small"
+                            sx={{ fontSize: '0.6rem', height: 18, bgcolor: 'rgba(74,222,128,0.15)', color: '#4ade80', fontWeight: 700 }} />
+                        )}
+                      </Box>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.3 }}>
+                        <Typography variant="caption" color="text.secondary">{d.phone_number}</Typography>
+                        <Chip
+                          label={stCfg.label} size="small"
+                          sx={{ fontSize: '0.6rem', height: 16, bgcolor: `${stCfg.color}20`, color: stCfg.color, fontWeight: 700 }}
+                        />
+                      </Box>
+                    </Box>
+                    {d.distKm !== null ? (
+                      <Tooltip title="Khoảng cách từ shipper đến điểm đón">
+                        <Box sx={{ textAlign: 'right' }}>
+                          <NearMeRoundedIcon sx={{ fontSize: 14, color: 'secondary.main' }} />
+                          <Typography variant="caption" color="secondary.main" display="block" fontWeight={700}>
+                            {d.distKm.toFixed(1)} km
+                          </Typography>
+                        </Box>
+                      </Tooltip>
+                    ) : (
+                      <Typography variant="caption" color="text.disabled">GPS N/A</Typography>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </Box>
+        )}
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button onClick={onClose} sx={{ color: 'text.secondary' }}>Đóng</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+/* ══════════════════════════════════════════════════
+   Main OrdersPage
+══════════════════════════════════════════════════ */
 export default function OrdersPage() {
   const [orders, setOrders]     = useState([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
   const [qrOrder, setQrOrder]   = useState(null);
-
+  const [dispatchOrder, setDispatchOrder] = useState(null);
   const [selectedDriverId, setSelectedDriverId] = useState('ALL');
 
   const fetchOrders = useCallback(async () => {
@@ -64,38 +282,35 @@ export default function OrdersPage() {
     const channel = supabase
       .channel('orders-admin-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
-        fetchOrders(); // Refetch để lấy join với drivers
+        fetchOrders();
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [fetchOrders]);
 
-  // Derived state for Filtering and Revenue
+  // Derived state
   const { displayedOrders, uniqueDrivers, revenueToday } = useMemo(() => {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
     const filtered = selectedDriverId === 'ALL' ? orders : orders.filter(o => o.driver_id === selectedDriverId);
-    
     let revToday = 0;
     filtered.forEach(o => {
-      if (o.status === 'COMPLETED' && new Date(o.created_at) >= todayStart) {
-        revToday += o.price || 0;
-      }
+      if (o.status === 'COMPLETED' && new Date(o.created_at) >= todayStart) revToday += o.price || 0;
     });
-
     const dMap = new Map();
     orders.forEach(o => {
       if (o.driver_id && o.drivers) dMap.set(o.driver_id, o.drivers.full_name);
     });
     const drivers = Array.from(dMap.entries()).map(([id, name]) => ({ id, name }));
-
     return { displayedOrders: filtered, uniqueDrivers: drivers, revenueToday: revToday };
   }, [orders, selectedDriverId]);
 
   const summaryByStatus = Object.entries(ORDER_STATUS).map(([key, cfg]) => ({
     key, ...cfg, count: displayedOrders.filter(o => o.status === key).length,
   }));
+
+  const pendingCount = displayedOrders.filter(o => o.status === 'PENDING').length;
 
   return (
     <Box className="page-enter" sx={{ minHeight: 'calc(100vh - 64px)', py: 3 }}>
@@ -109,7 +324,7 @@ export default function OrdersPage() {
             <Typography variant="h5" fontWeight={800} letterSpacing="-0.5px">Đơn Hàng</Typography>
           </Box>
           <Typography variant="body2" color="text.secondary" ml={6}>
-            Theo dõi và quản lý đơn hàng thời gian thực
+            Theo dõi, quản lý và phân đơn cho shipper
           </Typography>
         </Box>
 
@@ -126,9 +341,9 @@ export default function OrdersPage() {
                   sx={{ fontWeight: 700, bgcolor: s.bg, color: s.color, border: `1px solid ${s.color}33`, px: 1 }}
                 />
               ))}
-              <Chip 
+              <Chip
                 label={`Doanh thu hôm nay: ${formatVND(revenueToday)}`}
-                sx={{ fontWeight: 800, bgcolor: 'rgba(252, 211, 77, 0.12)', color: '#fcd34d', border: '1px solid rgba(252, 211, 77, 0.3)', px: 1, ml: 'auto' }}
+                sx={{ fontWeight: 800, bgcolor: 'rgba(252,211,77,0.12)', color: '#fcd34d', border: '1px solid rgba(252,211,77,0.3)', px: 1, ml: 'auto' }}
               />
             </Box>
           </Grid>
@@ -145,10 +360,30 @@ export default function OrdersPage() {
           </Grid>
         </Grid>
 
+        {/* Banner đơn PENDING cần phân */}
+        {pendingCount > 0 && (
+          <Alert
+            severity="warning"
+            variant="outlined"
+            sx={{ mb: 2, borderColor: 'rgba(251,146,60,0.4)', '& .MuiAlert-message': { width: '100%' } }}
+          >
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+              <Typography variant="body2" fontWeight={700}>
+                ⏳ Có <Box component="span" sx={{ color: '#fb923c' }}>{pendingCount} đơn</Box> đang chờ phân shipper
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Nhấn nút "Phân đơn" ở từng đơn để giao cho shipper
+              </Typography>
+            </Box>
+          </Alert>
+        )}
+
         <Card variant="outlined">
           <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
             {loading ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress sx={{ color: 'primary.main' }} /></Box>
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                <CircularProgress sx={{ color: 'primary.main' }} />
+              </Box>
             ) : (
               <Box sx={gridSx}>
                 <DataGrid dataSource={displayedOrders} keyExpr="id" showBorders={false} showColumnLines={false} showRowLines columnAutoWidth>
@@ -175,7 +410,26 @@ export default function OrdersPage() {
                   <Column dataField="status" caption="Trạng thái" width={130} cellRender={({value}) => <OrderStatusChip value={value} />} />
                   <Column dataField="drivers.full_name" caption="Tài xế" width={140}
                     cellRender={({data}) => <span>{data.drivers?.full_name || <span style={{color:'#5a5855'}}>Chưa gán</span>}</span>} />
-                  {/* GPS Check-in Điểm Đón */}
+
+                  {/* Nút Phân đơn — chỉ hiện khi PENDING */}
+                  <Column caption="Phân đơn" width={130} allowFiltering={false} allowSorting={false}
+                    cellRender={({data}) => data.status === 'PENDING' ? (
+                      <Button
+                        size="small" variant="outlined"
+                        startIcon={<PersonPinRoundedIcon sx={{ fontSize: '14px !important' }} />}
+                        onClick={() => setDispatchOrder(data)}
+                        sx={{
+                          fontSize: '0.7rem', fontWeight: 700, py: 0.25,
+                          color: '#fb923c', borderColor: 'rgba(251,146,60,0.4)',
+                          '&:hover': { bgcolor: 'rgba(251,146,60,0.08)' },
+                        }}
+                      >
+                        Phân đơn
+                      </Button>
+                    ) : null}
+                  />
+
+                  {/* GPS Check-in */}
                   <Column caption="📍 GPS Đón" width={140} allowFiltering={false} allowSorting={false}
                     cellRender={({data}) => data.pickup_checkin_lat
                       ? (
@@ -188,7 +442,6 @@ export default function OrdersPage() {
                         </Box>
                       ) : <span style={{color:'#5a5855',fontSize:'0.78rem'}}>—</span>}
                   />
-                  {/* GPS Check-in Giao Hàng */}
                   <Column caption="🏁 GPS Giao" width={140} allowFiltering={false} allowSorting={false}
                     cellRender={({data}) => data.delivery_checkin_lat
                       ? (
@@ -215,8 +468,7 @@ export default function OrdersPage() {
                       ? <Box component="a" href={value} target="_blank" sx={{ color: 'secondary.main', fontSize: '0.78rem' }}>Xem ảnh</Box>
                       : <span style={{color:'#5a5855',fontSize:'0.78rem'}}>Chưa có</span>}
                   />
-                  <Column dataField="created_at" caption="Tạo lúc" width={160} dataType="datetime"
-                    format="dd/MM/yyyy HH:mm" />
+                  <Column dataField="created_at" caption="Tạo lúc" width={160} dataType="datetime" format="dd/MM/yyyy HH:mm" />
                 </DataGrid>
               </Box>
             )}
@@ -224,6 +476,7 @@ export default function OrdersPage() {
         </Card>
       </Container>
 
+      {/* Dialogs */}
       {qrOrder && (
         <VietQRDialog
           open={!!qrOrder}
@@ -231,6 +484,15 @@ export default function OrdersPage() {
           amount={qrOrder.price}
           description={`BeeShip ${qrOrder.id?.slice(0, 8)}`}
           title={`VietQR — ${qrOrder.customer_phone}`}
+        />
+      )}
+
+      {dispatchOrder && (
+        <DispatchDialog
+          order={dispatchOrder}
+          open={!!dispatchOrder}
+          onClose={() => setDispatchOrder(null)}
+          onDispatched={fetchOrders}
         />
       )}
     </Box>

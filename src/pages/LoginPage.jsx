@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import {
   Box,
   Card,
@@ -11,11 +11,13 @@ import {
   CircularProgress,
   InputAdornment,
   IconButton,
+  Divider,
 } from '@mui/material';
 import EmailRoundedIcon from '@mui/icons-material/EmailRounded';
 import LockRoundedIcon from '@mui/icons-material/LockRounded';
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
 import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded';
+import PersonAddRoundedIcon from '@mui/icons-material/PersonAddRounded';
 import { supabase } from '../supabaseClient.js';
 import { useAuth } from '../contexts/AuthContext.jsx';
 
@@ -34,8 +36,9 @@ export default function LoginPage() {
   useEffect(() => {
     if (!authLoading && user && role) {
       const from = location.state?.from?.pathname;
-      if (role === 'ADMIN')   navigate(from || '/admin/dashboard', { replace: true });
-      if (role === 'SHIPPER') navigate(from || '/shipper/workspace', { replace: true });
+      if (role === 'ADMIN')    navigate(from || '/admin/dashboard',    { replace: true });
+      if (role === 'SHIPPER')  navigate(from || '/shipper/workspace',  { replace: true });
+      if (role === 'CUSTOMER') navigate(from || '/customer/home',      { replace: true });
     }
   }, [user, role, authLoading, navigate, location]);
 
@@ -48,7 +51,6 @@ export default function LoginPage() {
       if (authErr) throw authErr;
       if (!data.user) throw new Error('Đăng nhập thất bại.');
 
-      // Fetch role ngay sau khi đăng nhập (AuthContext sẽ cập nhật qua subscription)
       const { data: roleData } = await supabase
         .from('user_roles')
         .select('role')
@@ -56,8 +58,9 @@ export default function LoginPage() {
         .single();
 
       const userRole = roleData?.role;
-      if (userRole === 'ADMIN')   navigate('/admin/dashboard', { replace: true });
-      else if (userRole === 'SHIPPER') navigate('/shipper/workspace', { replace: true });
+      if (userRole === 'ADMIN')         navigate('/admin/dashboard',   { replace: true });
+      else if (userRole === 'SHIPPER')  navigate('/shipper/workspace', { replace: true });
+      else if (userRole === 'CUSTOMER') navigate('/customer/home',     { replace: true });
       else setError('Tài khoản chưa được phân quyền. Liên hệ quản trị viên.');
     } catch (err) {
       setError(err.message || 'Đăng nhập thất bại.');
@@ -95,7 +98,7 @@ export default function LoginPage() {
           backdropFilter: 'blur(16px)',
         }}
       >
-        <CardContent sx={{ p: 4 }}>
+        <CardContent sx={{ p: { xs: 3, sm: 4 } }}>
           {/* Logo */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 4, justifyContent: 'center' }}>
             <Box
@@ -124,7 +127,7 @@ export default function LoginPage() {
                 Bee<Box component="span" sx={{ color: 'primary.main' }}>Ship</Box>
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                Hệ thống quản lý nội bộ
+                Dịch vụ giao hàng &amp; vận chuyển
               </Typography>
             </Box>
           </Box>
@@ -208,6 +211,34 @@ export default function LoginPage() {
               {loading ? <CircularProgress size={22} sx={{ color: '#1a1207' }} /> : 'Đăng Nhập'}
             </Button>
           </Box>
+
+          <Divider sx={{ my: 3, borderColor: 'rgba(241,240,239,0.08)' }}>
+            <Typography variant="caption" color="text.disabled">hoặc</Typography>
+          </Divider>
+
+          <Button
+            component={Link}
+            to="/register"
+            variant="outlined"
+            fullWidth
+            startIcon={<PersonAddRoundedIcon />}
+            sx={{
+              py: 1.2,
+              fontWeight: 600,
+              borderColor: 'rgba(6,182,212,0.35)',
+              color: 'secondary.main',
+              '&:hover': {
+                borderColor: 'secondary.main',
+                bgcolor: 'rgba(6,182,212,0.06)',
+              },
+            }}
+          >
+            Đăng ký tài khoản mới
+          </Button>
+
+          <Typography variant="caption" color="text.disabled" display="block" textAlign="center" mt={2}>
+            Đăng ký để đặt dịch vụ giao hàng, xe ôm, ship đồ ăn...
+          </Typography>
         </CardContent>
       </Card>
     </Box>
