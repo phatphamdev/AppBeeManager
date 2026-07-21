@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS public.drivers (
     full_name TEXT NOT NULL,
     phone_number TEXT NOT NULL,
     status public.driver_status DEFAULT 'OFFLINE'::public.driver_status NOT NULL,
+    latitude NUMERIC,
+    longitude NUMERIC,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
@@ -51,7 +53,9 @@ CREATE TABLE IF NOT EXISTS public.drivers (
 -- 2.5. orders
 CREATE TABLE IF NOT EXISTS public.orders (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    customer_name TEXT,
     customer_phone TEXT NOT NULL,
+    notes TEXT,
     origin TEXT NOT NULL,
     destination TEXT NOT NULL,
     price NUMERIC NOT NULL,
@@ -220,3 +224,13 @@ DROP POLICY IF EXISTS "Authenticated users can upload" ON storage.objects;
 CREATE POLICY "Authenticated users can upload" 
 ON storage.objects FOR INSERT 
 WITH CHECK ( bucket_id = 'proofs' AND auth.role() = 'authenticated' );
+
+-- ==============================================================================
+-- 9. MIGRATION — Thêm cột mới vào bảng đã tồn tại (Chạy 1 lần)
+-- Nếu database đã có sẵn, chạy đoạn này để thêm các cột GPS & khách hàng
+-- ==============================================================================
+ALTER TABLE public.drivers ADD COLUMN IF NOT EXISTS latitude NUMERIC;
+ALTER TABLE public.drivers ADD COLUMN IF NOT EXISTS longitude NUMERIC;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS customer_name TEXT;
+ALTER TABLE public.orders ADD COLUMN IF NOT EXISTS notes TEXT;
+

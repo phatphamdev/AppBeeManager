@@ -14,6 +14,7 @@ import TuneRoundedIcon         from '@mui/icons-material/TuneRounded';
 import SpeedRoundedIcon        from '@mui/icons-material/SpeedRounded';
 import AddRoundedIcon          from '@mui/icons-material/AddRounded';
 import PhoneRoundedIcon        from '@mui/icons-material/PhoneRounded';
+import EditRoadRoundedIcon     from '@mui/icons-material/EditRoadRounded';
 import PlacesAutocomplete      from '../../components/PlacesAutocomplete.jsx';
 import MapRoute                from '../../components/MapRoute.jsx';
 import { supabase }            from '../../supabaseClient.js';
@@ -23,8 +24,8 @@ import { VietQRDialog }        from '../../components/VietQR.jsx';
 const formatVND = (amount) =>
   new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(Math.round(amount));
 
-/* ── Tính giá ───────────────────────────────────────────────── */
-function calculatePrice(service, activeSurcharges, distance_km, itemCount = 1) {
+/* ── Tính giá (nâng cấp: customSurcharge, manualKm) ─────────── */
+function calculatePrice(service, activeSurcharges, distance_km, itemCount = 1, customSurcharge = 0) {
   if (!service || !distance_km) return null;
   const { base_price, base_km, per_km_price } = service;
   const extraKm = Math.max(0, distance_km - base_km);
@@ -36,8 +37,14 @@ function calculatePrice(service, activeSurcharges, distance_km, itemCount = 1) {
   const fixeds      = activeSurcharges.filter(s => s.type === 'FIXED');
   let afterMultiplier = subtotal;
   for (const m of multipliers) afterMultiplier *= m.value;
-  const fixedTotal = fixeds.reduce((sum, f) => sum + f.value, 0);
-  return { base_price, extra_km: extraKm, extra_fare: extraKm * per_km_price, extra_item_fee: extraItemFee, item_count: itemCount, subtotal, multipliers, fixeds, after_multiplier: afterMultiplier, fixed_total: fixedTotal, total: afterMultiplier + fixedTotal };
+  const fixedTotal = fixeds.reduce((sum, f) => sum + f.value, 0) + (customSurcharge || 0);
+  return {
+    base_price, extra_km: extraKm, extra_fare: extraKm * per_km_price,
+    extra_item_fee: extraItemFee, item_count: itemCount, subtotal, multipliers, fixeds,
+    after_multiplier: afterMultiplier, fixed_total: fixedTotal,
+    custom_surcharge: customSurcharge || 0,
+    total: afterMultiplier + fixedTotal,
+  };
 }
 
 function StatCard({ icon, label, value, unit, color = 'primary.main' }) {
@@ -61,14 +68,27 @@ function PriceRow({ label, value, isSub = false, color }) {
   );
 }
 
-/* ── Tạo đơn hàng Dialog ────────────────────────────────────── */
-function CreateOrderPanel({ priceBreakdown, originText, destinationText, onOrderCreated }) {
+/* ── Tạo đơn hàng Panel ────────────────────────────────────── */
+function CreateOrderPanel({ priceBreakdown, originText, destinationText, selectedService, onOrderCreated }) {
+  const [customerName, setCustomerName]   = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [notes, setNotes]                 = useState('');
   const [paymentMethod, setPaymentMethod] = useState('CASH');
+  const [driverId, setDriverId]           = useState('');
+  const [idleDrivers, setIdleDrivers]     = useState([]);
   const [loading, setLoading]             = useState(false);
   const [error, setError]                 = useState('');
   const [success, setSuccess]             = useState('');
   const [qrOpen, setQrOpen]               = useState(false);
+
+  // Fetch IDLE drivers
+  useEffect(() => {
+    if (priceBreakdown) {
+      supabase.from('drivers').select('*').eq('status', 'IDLE').then(({ data }) => {
+        if (data) setIdleDrivers(data);
+      });
+    }
+  }, [priceBreakdown]);
 
   if (!priceBreakdown) return null;
 
@@ -76,18 +96,31 @@ function CreateOrderPanel({ priceBreakdown, originText, destinationText, onOrder
     if (!customerPhone.trim()) { setError('Vui lòng nhập số điện thoại khách hàng.'); return; }
     setLoading(true); setError(''); setSuccess('');
     const { error: err } = await supabase.from('orders').insert([{
+      customer_name:  customerName.trim() || null,
       customer_phone: customerPhone.trim(),
-      origin: originText,
-      destination: destinationText,
-      price: Math.round(priceBreakdown.total),
+      notes:          notes.trim() || null,
+      service_name:   selectedService?.name || null,  // ← Lưu tên dịch vụ để shipper thấy
+      origin:         originText,
+      destination:    destinationText,
+      price:          Math.round(priceBreakdown.total),
       payment_method: paymentMethod,
-      status: 'PENDING',
+      status:         driverId ? 'ACCEPTED' : 'PENDING',
+      driver_id:      driverId || null,
     }]);
+
+    // Nếu gán tài xế thì update status tài xế luôn
+    if (!err && driverId) {
+      await supabase.from('drivers').update({ status: 'PICKING_UP' }).eq('id', driverId);
+    }
+
     setLoading(false);
     if (err) setError(`Lỗi tạo đơn: ${err.message}`);
     else {
       setSuccess('Tạo đơn hàng thành công!');
+      setCustomerName('');
       setCustomerPhone('');
+      setNotes('');
+      setDriverId('');
       if (onOrderCreated) onOrderCreated();
     }
   };
@@ -106,10 +139,29 @@ function CreateOrderPanel({ priceBreakdown, originText, destinationText, onOrder
 
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
             <TextField
-              fullWidth size="small" label="Số điện thoại khách"
+              fullWidth size="small" label="Số điện thoại khách *"
               value={customerPhone} onChange={e => setCustomerPhone(e.target.value)}
               slotProps={{ input: { startAdornment: <PhoneRoundedIcon sx={{ mr: 1, color: 'text.disabled', fontSize: 18 }} /> } }}
             />
+            <TextField
+              fullWidth size="small" label="Họ tên khách (tùy chọn)"
+              value={customerName} onChange={e => setCustomerName(e.target.value)}
+            />
+            <TextField
+              fullWidth size="small" label="Ghi chú / Khách muốn mua gì / Yêu cầu thêm"
+              multiline rows={2} placeholder="VD: 1 ly trà sữa trân châu, 2 bánh mì thịt..."
+              value={notes} onChange={e => setNotes(e.target.value)}
+            />
+            <FormControl fullWidth size="small">
+              <InputLabel>Chọn tài xế nhận đơn (Tùy chọn)</InputLabel>
+              <Select value={driverId} label="Chọn tài xế nhận đơn (Tùy chọn)" onChange={e => setDriverId(e.target.value)}>
+                <MenuItem value="">-- Broadcast (Tất cả tài xế) --</MenuItem>
+                {idleDrivers.map(d => (
+                  <MenuItem key={d.id} value={d.id}>🏍 {d.full_name} ({d.phone_number})</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
             <FormControl fullWidth size="small">
               <InputLabel>Phương thức thanh toán</InputLabel>
               <Select value={paymentMethod} label="Phương thức thanh toán" onChange={e => setPaymentMethod(e.target.value)}>
@@ -118,7 +170,6 @@ function CreateOrderPanel({ priceBreakdown, originText, destinationText, onOrder
               </Select>
             </FormControl>
 
-            {/* VietQR Button */}
             {paymentMethod === 'TRANSFER' && (
               <Button variant="outlined" fullWidth onClick={() => setQrOpen(true)}
                 sx={{ borderColor: 'rgba(6,182,212,0.4)', color: 'secondary.main' }}>
@@ -158,22 +209,38 @@ export default function DispatchPage() {
   const [selectedServiceId, setSelectedServiceId] = useState('');
   const [activeSurchargeIds, setActiveSurchargeIds] = useState(new Set());
   const [itemCount, setItemCount]     = useState(1);
+  const [manualKm, setManualKm]       = useState('');       // ← Mới: nhập km tay
+  const [customSurcharge, setCustomSurcharge] = useState(''); // ← Mới: phụ phí đặc biệt
   const [priceBreakdown, setPriceBreakdown] = useState(null);
   const priceRef = useRef(null);
 
+  /* ── Fetch & sort theo localStorage ────────────────────────── */
   useEffect(() => {
     async function fetchData() {
       setLoadingData(true); setDataError('');
       try {
         const [{ data: svcData, error: svcErr }, { data: surData, error: surErr }] = await Promise.all([
-          supabase.from('services').select('*').order('id'),
+          supabase.from('services').select('*'),
           supabase.from('surcharges').select('*').eq('is_active', true).order('id'),
         ]);
         if (svcErr) throw new Error(svcErr.message);
         if (surErr) throw new Error(surErr.message);
-        setServices(svcData || []);
+
+        // Sort dịch vụ theo thứ tự đã lưu ở localStorage
+        let savedOrder = [];
+        try { savedOrder = JSON.parse(localStorage.getItem('servicesOrder')) || []; } catch {}
+        const sortedServices = (svcData || []).sort((a, b) => {
+          const aIndex = savedOrder.indexOf(a.id);
+          const bIndex = savedOrder.indexOf(b.id);
+          if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+          if (aIndex !== -1) return -1;
+          if (bIndex !== -1) return 1;
+          return a.id - b.id;
+        });
+
+        setServices(sortedServices);
         setSurcharges(surData || []);
-        if (svcData?.length > 0) setSelectedServiceId(svcData[0].id);
+        if (sortedServices?.length > 0) setSelectedServiceId(sortedServices[0].id);
       } catch (err) {
         setDataError(`Lỗi tải dữ liệu: ${err.message}`);
       } finally {
@@ -183,14 +250,16 @@ export default function DispatchPage() {
     fetchData();
   }, []);
 
+  /* ── Recalculate price (hỗ trợ manualKm + customSurcharge) ── */
   useEffect(() => {
-    if (!routeInfo || !selectedServiceId) { setPriceBreakdown(null); return; }
+    const distance_km = parseFloat(manualKm) || routeInfo?.distance_km;
+    if (!distance_km || !selectedServiceId) { setPriceBreakdown(null); return; }
     const service = services.find(s => s.id === selectedServiceId);
     const activeSurchargeList = surcharges.filter(s => activeSurchargeIds.has(s.id));
-    const result = calculatePrice(service, activeSurchargeList, routeInfo.distance_km, itemCount);
+    const result = calculatePrice(service, activeSurchargeList, distance_km, itemCount, parseFloat(customSurcharge) || 0);
     setPriceBreakdown(result);
     if (priceRef.current) { priceRef.current.classList.remove('price-pulse'); void priceRef.current.offsetWidth; priceRef.current.classList.add('price-pulse'); }
-  }, [routeInfo, selectedServiceId, activeSurchargeIds, services, surcharges, itemCount]);
+  }, [routeInfo, manualKm, selectedServiceId, activeSurchargeIds, services, surcharges, itemCount, customSurcharge]);
 
   const handleOriginSelected    = useCallback(p => { setOrigin(p); setOriginText(p.address); }, []);
   const handleDestinationSelected = useCallback(p => { setDestination(p); setDestinationText(p.address); }, []);
@@ -238,9 +307,10 @@ export default function DispatchPage() {
                       </Select>
                     </FormControl>
                   )}
-                  {selectedService && (selectedService.name.toLowerCase().includes('giao hàng') || selectedService.name.toLowerCase().includes('giao nước')) && (
+                  {/* Số lượng items nếu dịch vụ cần */}
+                  {selectedService && (selectedService.name.toLowerCase().includes('giao hàng') || selectedService.name.toLowerCase().includes('giao nước') || selectedService.requires_item_count) && (
                     <Box sx={{ mt: 2.5 }}>
-                      <TextField fullWidth type="number" label="Số lượng (items/ly)" value={itemCount} onChange={e => setItemCount(Math.max(1, parseInt(e.target.value) || 1))} inputProps={{ min: 1 }} />
+                      <TextField fullWidth type="number" size="small" label="Số lượng (items/ly)" value={itemCount} onChange={e => setItemCount(Math.max(1, parseInt(e.target.value) || 1))} inputProps={{ min: 1 }} />
                     </Box>
                   )}
                   {selectedService && (
@@ -252,20 +322,29 @@ export default function DispatchPage() {
                 </CardContent>
               </Card>
 
-              {/* Địa điểm */}
+              {/* Địa điểm + nhập km tay */}
               <Card variant="outlined" sx={{ overflow: 'visible' }}>
                 <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
                   <Typography variant="subtitle1" fontWeight={700} mb={2} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <RouteRoundedIcon sx={{ color: 'primary.main', fontSize: 20 }} />Hành trình
                   </Typography>
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                    {/* Nhập km tay — tính năng mới từ webBeeShip */}
+                    <TextField
+                      fullWidth size="small" type="number"
+                      label="Nhập số km (nếu không chọn điểm)"
+                      value={manualKm} onChange={e => setManualKm(e.target.value)}
+                      placeholder="Ví dụ: 5.5"
+                      inputProps={{ step: '0.1', min: '0' }}
+                      slotProps={{ input: { startAdornment: <EditRoadRoundedIcon sx={{ mr: 1, color: 'text.disabled', fontSize: 18 }} /> } }}
+                    />
                     <PlacesAutocomplete label="Điểm đón" value={originText} onChange={setOriginText} onPlaceSelected={handleOriginSelected} type="origin" />
                     <PlacesAutocomplete label="Điểm đến" value={destinationText} onChange={setDestinationText} onPlaceSelected={handleDestinationSelected} type="destination" />
                   </Box>
-                  {routeInfo && (
+                  {(manualKm || routeInfo) && (
                     <Box sx={{ display: 'flex', gap: 1, mt: 2, flexWrap: 'wrap' }}>
-                      <Chip icon={<RouteRoundedIcon />} label={`${routeInfo.distance_km.toFixed(1)} km`} size="small" sx={{ bgcolor: 'rgba(6,182,212,0.12)', color: 'secondary.main', fontWeight: 700 }} />
-                      <Chip icon={<AccessTimeRoundedIcon />} label={`~${routeInfo.duration_min} phút`} size="small" sx={{ bgcolor: 'rgba(245,158,11,0.12)', color: 'primary.main', fontWeight: 700 }} />
+                      <Chip icon={<RouteRoundedIcon />} label={`${manualKm ? parseFloat(manualKm) : routeInfo?.distance_km?.toFixed(1)} km`} size="small" sx={{ bgcolor: 'rgba(6,182,212,0.12)', color: 'secondary.main', fontWeight: 700 }} />
+                      {!manualKm && routeInfo && <Chip icon={<AccessTimeRoundedIcon />} label={`~${routeInfo.duration_min} phút`} size="small" sx={{ bgcolor: 'rgba(245,158,11,0.12)', color: 'primary.main', fontWeight: 700 }} />}
                     </Box>
                   )}
                 </CardContent>
@@ -280,11 +359,12 @@ export default function DispatchPage() {
                     </Typography>
                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
                       <PriceRow label={`Cước cơ bản (${selectedService?.base_km} km đầu)`} value={formatVND(priceBreakdown.base_price)} />
-                      {priceBreakdown.extra_km > 0 && <PriceRow label={`${priceBreakdown.extra_km.toFixed(2)} km vượt`} value={formatVND(priceBreakdown.extra_fare)} />}
+                      {priceBreakdown.extra_km > 0 && <PriceRow label={`${priceBreakdown.extra_km.toFixed(2)} km vượt (×${formatVND(selectedService?.per_km_price)}/km)`} value={formatVND(priceBreakdown.extra_fare)} />}
                       {priceBreakdown.extra_item_fee > 0 && <PriceRow label={`Phụ phí số lượng (${priceBreakdown.item_count} items)`} value={`+${formatVND(priceBreakdown.extra_item_fee)}`} />}
                       <PriceRow label="Tạm tính" value={formatVND(priceBreakdown.subtotal)} isSub />
                       {priceBreakdown.multipliers.map(m => <PriceRow key={m.id} label={`${m.name} (×${m.value})`} value={`×${m.value}`} color="warning.main" />)}
                       {priceBreakdown.fixeds.map(f => <PriceRow key={f.id} label={f.name} value={`+${formatVND(f.value)}`} color="secondary.main" />)}
+                      {priceBreakdown.custom_surcharge > 0 && <PriceRow label="Phụ phí đặc biệt" value={`+${formatVND(priceBreakdown.custom_surcharge)}`} color="secondary.main" />}
                     </Box>
                     <Divider sx={{ my: 2, borderColor: 'rgba(245,158,11,0.25)' }} />
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -294,10 +374,10 @@ export default function DispatchPage() {
                   </CardContent>
                 </Card>
               ) : (
-                routeInfo && !selectedServiceId && <Alert severity="info" variant="outlined">Vui lòng chọn loại dịch vụ để xem cước phí.</Alert>
+                (manualKm || routeInfo) && !selectedServiceId && <Alert severity="info" variant="outlined">Vui lòng chọn loại dịch vụ để xem cước phí.</Alert>
               )}
 
-              {/* Surcharges */}
+              {/* Phụ phí */}
               {!loadingData && surcharges.length > 0 && (
                 <Card variant="outlined">
                   <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
@@ -322,6 +402,18 @@ export default function DispatchPage() {
                         />
                       ))}
                     </FormGroup>
+                    {/* Phụ phí đặc biệt điền tay — mới từ webBeeShip */}
+                    <Box sx={{ mt: 1.5 }}>
+                      <TextField
+                        fullWidth size="small"
+                        label="Phụ phí đặc biệt điền tay (VNĐ)"
+                        type="number"
+                        value={customSurcharge}
+                        onChange={e => setCustomSurcharge(e.target.value)}
+                        placeholder="Ví dụ: 10000"
+                        inputProps={{ step: '1000', min: '0' }}
+                      />
+                    </Box>
                   </CardContent>
                 </Card>
               )}
@@ -331,6 +423,7 @@ export default function DispatchPage() {
                 priceBreakdown={priceBreakdown}
                 originText={originText}
                 destinationText={destinationText}
+                selectedService={selectedService}
               />
             </Box>
           </Grid>

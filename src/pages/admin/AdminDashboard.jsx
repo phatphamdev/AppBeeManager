@@ -9,7 +9,7 @@ import TuneRoundedIcon       from '@mui/icons-material/TuneRounded';
 
 import DataGrid, {
   Column, Lookup, Editing, Sorting, FilterRow,
-  Pager, Paging, Toolbar, Item as ToolbarItem,
+  Pager, Paging, Toolbar, Item as ToolbarItem, RowDragging,
 } from 'devextreme-react/data-grid';
 
 import { supabase } from '../../supabaseClient.js';
@@ -77,10 +77,37 @@ function ServicesGrid() {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    const { data: rows, error: err } = await supabase.from('services').select('*').order('id');
-    if (err) setError(err.message); else setData(rows || []);
+    const { data: rows, error: err } = await supabase.from('services').select('*');
+    if (err) {
+      setError(err.message);
+    } else {
+      // Sort theo thứ tự đã lưu trong localStorage
+      let savedOrder = [];
+      try { savedOrder = JSON.parse(localStorage.getItem('servicesOrder')) || []; } catch {}
+      const sortedRows = (rows || []).sort((a, b) => {
+        const aIndex = savedOrder.indexOf(a.id);
+        const bIndex = savedOrder.indexOf(b.id);
+        if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+        if (aIndex !== -1) return -1;
+        if (bIndex !== -1) return 1;
+        return a.id - b.id;
+      });
+      setData(sortedRows);
+    }
     setLoading(false);
   }, []);
+
+  // Kéo thả để sắp xếp thứ tự hiển thị
+  const onReorder = (e) => {
+    const visibleRows = e.component.getVisibleRows();
+    const newData = [...data];
+    const toIndex = newData.findIndex(item => item.id === visibleRows[e.toIndex].data.id);
+    const fromIndex = newData.findIndex(item => item.id === e.itemData.id);
+    newData.splice(fromIndex, 1);
+    newData.splice(toIndex, 0, e.itemData);
+    setData(newData);
+    localStorage.setItem('servicesOrder', JSON.stringify(newData.map(item => item.id)));
+  };
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -107,9 +134,13 @@ function ServicesGrid() {
   return (
     <Box>
       {error && <Alert severity="error" onClose={() => setError('')} sx={{ mb: 2 }}>{error}</Alert>}
+      <Alert severity="info" variant="outlined" sx={{ mb: 2, fontSize: '0.8rem', borderColor: 'rgba(245,158,11,0.25)' }}>
+        🔀 Kéo cột bên trái (☰) để sắp xếp thứ tự dịch vụ — thứ tự này sẽ ưu tiên trên Bảng Điều Phối.
+      </Alert>
       <Box sx={gridSx}>
         <DataGrid ref={gridRef} dataSource={data} keyExpr="id" showBorders={false} showColumnLines={false} showRowLines columnAutoWidth
           onRowInserted={onRowInserted} onRowUpdated={onRowUpdated} onRowRemoved={onRowRemoved}>
+          <RowDragging allowReordering={true} onReorder={onReorder} showDragIcons={true} />
           <Editing mode="row" allowAdding allowUpdating allowDeleting confirmDelete useIcons />
           <FilterRow visible /><Sorting mode="multiple" /><Paging defaultPageSize={10} />
           <Pager showPageSizeSelector allowedPageSizes={[5,10,20]} showInfo infoText="Trang {0}/{1} ({2} bản ghi)" />
@@ -119,6 +150,7 @@ function ServicesGrid() {
           <Column dataField="base_price" caption="Giá cơ bản" dataType="number" alignment="right" cellRender={({value})=><CurrencyCell value={value}/>} validationRules={[{type:'required'},{type:'numeric'}]} />
           <Column dataField="base_km" caption="Km cơ bản" dataType="number" alignment="right" format={{type:'fixedPoint',precision:1}} validationRules={[{type:'required'},{type:'numeric'}]} />
           <Column dataField="per_km_price" caption="Giá/km thêm" dataType="number" alignment="right" cellRender={({value})=><CurrencyCell value={value}/>} validationRules={[{type:'required'},{type:'numeric'}]} />
+          <Column dataField="requires_item_count" caption="Cần số lượng" dataType="boolean" width={130} alignment="center" />
         </DataGrid>
       </Box>
     </Box>
