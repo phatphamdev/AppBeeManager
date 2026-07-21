@@ -57,7 +57,7 @@ export default function CustomerOrderPage() {
   const [originText, setOriginText]     = useState('');
   const [destination, setDestination]   = useState(null);
   const [destinationText, setDestinationText] = useState('');
-  const [customerPhone, setCustomerPhone]     = useState('');
+  const [customerPhone, setCustomerPhone]     = useState(user?.user_metadata?.phone || '');
   const [notes, setNotes]               = useState('');
   const [paymentMethod, setPaymentMethod]     = useState('CASH');
   const [routeDistance, setRouteDistance]     = useState(null);

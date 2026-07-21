@@ -10,10 +10,12 @@ import {
   ListItemText,
   CircularProgress,
   Typography,
+  IconButton,
 } from '@mui/material';
 import LocationOnRoundedIcon from '@mui/icons-material/LocationOnRounded';
 import FlagRoundedIcon from '@mui/icons-material/FlagRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
+import MyLocationRoundedIcon from '@mui/icons-material/MyLocationRounded';
 
 const GOONG_API_KEY = import.meta.env.VITE_GOONG_API_KEY;
 
@@ -347,6 +349,42 @@ export default function PlacesAutocomplete({
     }
   };
 
+  /* ── Lấy vị trí GPS hiện tại ──────────────────────────── */
+  const handleGetCurrentLocation = (e) => {
+    e.stopPropagation();
+    if (!navigator.geolocation) {
+      alert("Trình duyệt không hỗ trợ định vị GPS.");
+      return;
+    }
+    setLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        try {
+          const address = await reverseGeocode(latitude, longitude);
+          onChange(address);
+          onPlaceSelected({ lat: latitude, lng: longitude, address });
+          saveRecentPlace({ lat: latitude, lng: longitude, address });
+        } catch (error) {
+          console.error("Lỗi Reverse Geocode GPS:", error);
+          const fallbackAddress = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+          onChange(fallbackAddress);
+          onPlaceSelected({ lat: latitude, lng: longitude, address: fallbackAddress });
+        } finally {
+          setLoading(false);
+          setOpen(false);
+          setShowRecent(false);
+        }
+      },
+      (error) => {
+        console.error("Lỗi lấy GPS:", error);
+        alert("Không thể lấy vị trí. Vui lòng cấp quyền truy cập vị trí trong cài đặt thiết bị/trình duyệt.");
+        setLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  };
+
   const Icon = type === 'origin' ? LocationOnRoundedIcon : FlagRoundedIcon;
   const iconColor = type === 'origin' ? '#06b6d4' : '#f59e0b';
   const recentPlaces = showRecent ? getRecentPlaces() : [];
@@ -372,11 +410,17 @@ export default function PlacesAutocomplete({
                 <Icon sx={{ color: iconColor, fontSize: 20 }} />
               </InputAdornment>
             ),
-            endAdornment: loading ? (
+            endAdornment: (
               <InputAdornment position="end">
-                <CircularProgress size={16} sx={{ color: 'primary.main' }} />
+                {loading ? (
+                  <CircularProgress size={16} sx={{ color: 'primary.main', mr: type === 'origin' ? 1 : 0 }} />
+                ) : type === 'origin' && !value ? (
+                  <IconButton size="small" onClick={handleGetCurrentLocation} edge="end" title="Lấy vị trí hiện tại">
+                    <MyLocationRoundedIcon sx={{ fontSize: 18, color: 'primary.main' }} />
+                  </IconButton>
+                ) : null}
               </InputAdornment>
-            ) : null,
+            ),
           },
         }}
       />
