@@ -41,5 +41,33 @@ CREATE POLICY "Allow self insert role" ON public.user_roles
   FOR INSERT WITH CHECK (auth_user_id = auth.uid());
 
 -- ==============================================================================
--- XONG! Sau khi chạy, reload Supabase client và thử đăng ký tài khoản mới.
+-- 7. TRIGGER tự động gán role CUSTOMER khi user mới đăng ký
+-- Dùng SECURITY DEFINER để bypass RLS (chạy server-side)
 -- ==============================================================================
+CREATE OR REPLACE FUNCTION public.handle_new_user_role()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Chỉ gán CUSTOMER nếu user chưa có role nào
+  INSERT INTO public.user_roles (auth_user_id, role)
+  VALUES (NEW.id, 'CUSTOMER')
+  ON CONFLICT (auth_user_id) DO NOTHING;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Xóa trigger cũ nếu có
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+
+-- Tạo trigger mới: tự động chạy sau khi user được tạo
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW
+  EXECUTE FUNCTION public.handle_new_user_role();
+
+-- ==============================================================================
+-- 8. (TÙY CHỌN) Tắt xác nhận email để đăng ký tức thì
+-- Vào Supabase Dashboard → Authentication → Providers → Email
+-- → Tắt "Confirm email" nếu muốn người dùng đăng nhập ngay sau đăng ký
+-- ==============================================================================
+
+-- XONG!

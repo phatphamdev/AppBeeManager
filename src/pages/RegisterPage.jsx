@@ -46,11 +46,7 @@ export default function RegisterPage() {
       if (signUpErr) throw signUpErr;
       if (!data.user) throw new Error('Không tạo được tài khoản.');
 
-      // 2. Insert role CUSTOMER
-      const { error: roleErr } = await supabase
-        .from('user_roles')
-        .insert([{ auth_user_id: data.user.id, role: 'CUSTOMER' }]);
-      if (roleErr) throw roleErr;
+      // 2. Role CUSTOMER sẽ được gán tự động thông qua Database Trigger (handle_new_user_role)
 
       setSuccess('Đăng ký thành công! Đang chuyển hướng...');
       setTimeout(() => navigate('/customer/home', { replace: true }), 1200);
