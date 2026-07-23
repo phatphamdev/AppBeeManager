@@ -3,20 +3,25 @@ import {
   Box, Container, Typography, Card, CardContent,
   Alert, Chip, CircularProgress, Button, Select, MenuItem,
   FormControl, InputLabel, Grid, Dialog, DialogTitle,
-  DialogContent, DialogActions, Avatar, Tooltip,
+  DialogContent, DialogActions, Avatar, Tooltip, Divider, IconButton,
 } from '@mui/material';
-import AssignmentRoundedIcon   from '@mui/icons-material/AssignmentRounded';
-import QrCodeRoundedIcon       from '@mui/icons-material/QrCodeRounded';
-import FiberManualRecordIcon   from '@mui/icons-material/FiberManualRecord';
-import PersonPinRoundedIcon    from '@mui/icons-material/PersonPinRounded';
+import AssignmentRoundedIcon      from '@mui/icons-material/AssignmentRounded';
+import QrCodeRoundedIcon          from '@mui/icons-material/QrCodeRounded';
+import FiberManualRecordIcon      from '@mui/icons-material/FiberManualRecord';
+import PersonPinRoundedIcon       from '@mui/icons-material/PersonPinRounded';
 import BroadcastOnHomeRoundedIcon from '@mui/icons-material/BroadcastOnHomeRounded';
-import NearMeRoundedIcon       from '@mui/icons-material/NearMeRounded';
+import NearMeRoundedIcon          from '@mui/icons-material/NearMeRounded';
+import CloseRoundedIcon           from '@mui/icons-material/CloseRounded';
+import LocationOnRoundedIcon      from '@mui/icons-material/LocationOnRounded';
+import FlagRoundedIcon            from '@mui/icons-material/FlagRounded';
+import PhoneRoundedIcon           from '@mui/icons-material/PhoneRounded';
+import PersonRoundedIcon          from '@mui/icons-material/PersonRounded';
 import DataGrid, {
   Column, Sorting, FilterRow, Pager, Paging,
 } from 'devextreme-react/data-grid';
 import { supabase }           from '../../supabaseClient.js';
 import { VietQRDialog }       from '../../components/VietQR.jsx';
-import { gridSx, formatVND } from '../../utils/shared.jsx';
+import { gridSx, formatVND, formatDateTime } from '../../utils/shared.jsx';
 
 /* ── Haversine distance (km) ─────────────────────── */
 function haversine(lat1, lon1, lat2, lon2) {
@@ -49,6 +54,207 @@ function OrderStatusChip({ value }) {
 
 function CurrencyCell({ value }) {
   return <span style={{ color: '#fcd34d', fontWeight: 600 }}>{formatVND(value)}</span>;
+}
+
+/* ══════════════════════════════════════════════════
+   Dialog Chi Tiết Đơn
+══════════════════════════════════════════════════ */
+function OrderDetailDialog({ order, open, onClose, onDispatch, onQR }) {
+  if (!order) return null;
+
+  const statusCfg = ORDER_STATUS[order.status] || ORDER_STATUS.PENDING;
+
+  const InfoRow = ({ icon, label, value, valueColor }) => (
+    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5, py: 1, borderBottom: '1px solid rgba(241,240,239,0.06)' }}>
+      <Box sx={{ color: '#a09d9a', mt: 0.2, flexShrink: 0 }}>{icon}</Box>
+      <Box sx={{ flex: 1 }}>
+        <Typography variant="caption" color="text.disabled" display="block" lineHeight={1.2}>{label}</Typography>
+        <Typography variant="body2" fontWeight={600} sx={{ color: valueColor || 'text.primary', mt: 0.3 }}>
+          {value || <span style={{ color: '#5a5855', fontStyle: 'italic' }}>Không có</span>}
+        </Typography>
+      </Box>
+    </Box>
+  );
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      maxWidth="sm"
+      fullWidth
+      PaperProps={{ sx: { bgcolor: 'background.paper', border: '1px solid rgba(245,158,11,0.2)' } }}
+    >
+      <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <AssignmentRoundedIcon sx={{ color: 'secondary.main' }} />
+          <Typography fontWeight={700}>Chi tiết đơn hàng</Typography>
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <OrderStatusChip value={order.status} />
+          <IconButton size="small" onClick={onClose} sx={{ color: 'text.secondary' }}>
+            <CloseRoundedIcon fontSize="small" />
+          </IconButton>
+        </Box>
+      </DialogTitle>
+
+      <DialogContent sx={{ pt: 0 }}>
+        {/* ID + Dịch vụ */}
+        <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.12)', mb: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+          <Box>
+            <Typography variant="caption" color="text.disabled">Mã đơn</Typography>
+            <Typography variant="body2" fontWeight={700} sx={{ fontFamily: 'monospace', letterSpacing: 1 }}>
+              {order.id?.slice(0, 16)}...
+            </Typography>
+          </Box>
+          <Box sx={{ textAlign: 'right' }}>
+            {order.service_name && (
+              <Chip label={order.service_name} size="small"
+                sx={{ fontSize: '0.68rem', bgcolor: 'rgba(245,158,11,0.12)', color: 'primary.main', fontWeight: 700 }} />
+            )}
+            <Typography variant="caption" color="text.disabled" display="block" mt={0.3}>
+              {formatDateTime(order.created_at)}
+            </Typography>
+          </Box>
+        </Box>
+
+        {/* Thông tin khách hàng */}
+        <Typography variant="subtitle2" fontWeight={700} color="text.secondary" mb={0.5} textTransform="uppercase" fontSize="0.68rem" letterSpacing={1}>
+          Khách hàng
+        </Typography>
+        <InfoRow
+          icon={<PersonRoundedIcon sx={{ fontSize: 18 }} />}
+          label="Tên khách hàng"
+          value={order.customer_name}
+        />
+        <InfoRow
+          icon={<PhoneRoundedIcon sx={{ fontSize: 18 }} />}
+          label="Số điện thoại"
+          value={order.customer_phone}
+          valueColor="#06b6d4"
+        />
+
+        {/* Địa chỉ */}
+        <Typography variant="subtitle2" fontWeight={700} color="text.secondary" mt={1.5} mb={0.5} textTransform="uppercase" fontSize="0.68rem" letterSpacing={1}>
+          Địa chỉ
+        </Typography>
+        <InfoRow
+          icon={<LocationOnRoundedIcon sx={{ fontSize: 18, color: '#fb923c' }} />}
+          label="Điểm đón"
+          value={order.origin}
+        />
+        {order.pickup_checkin_lat && (
+          <Box sx={{ pl: 4.5, pb: 1 }}>
+            <Box component="a"
+              href={`https://www.google.com/maps?q=${order.pickup_checkin_lat},${order.pickup_checkin_lng}`}
+              target="_blank" rel="noopener noreferrer"
+              sx={{ color: '#fb923c', fontSize: '0.75rem', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
+            >
+              📍 GPS Check-in: {Number(order.pickup_checkin_lat).toFixed(4)}, {Number(order.pickup_checkin_lng).toFixed(4)}
+            </Box>
+          </Box>
+        )}
+        <InfoRow
+          icon={<FlagRoundedIcon sx={{ fontSize: 18, color: '#4ade80' }} />}
+          label="Điểm đến"
+          value={order.destination}
+        />
+        {order.delivery_checkin_lat && (
+          <Box sx={{ pl: 4.5, pb: 1 }}>
+            <Box component="a"
+              href={`https://www.google.com/maps?q=${order.delivery_checkin_lat},${order.delivery_checkin_lng}`}
+              target="_blank" rel="noopener noreferrer"
+              sx={{ color: '#4ade80', fontSize: '0.75rem', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
+            >
+              🏁 GPS Check-in: {Number(order.delivery_checkin_lat).toFixed(4)}, {Number(order.delivery_checkin_lng).toFixed(4)}
+            </Box>
+          </Box>
+        )}
+
+        {/* Ghi chú */}
+        {order.notes && (
+          <>
+            <Typography variant="subtitle2" fontWeight={700} color="text.secondary" mt={1.5} mb={0.5} textTransform="uppercase" fontSize="0.68rem" letterSpacing={1}>
+              Ghi chú
+            </Typography>
+            <Box sx={{ p: 1.5, borderRadius: 1.5, bgcolor: 'rgba(165,243,252,0.05)', border: '1px solid rgba(165,243,252,0.12)' }}>
+              <Typography variant="body2" sx={{ color: '#a5f3fc' }}>📝 {order.notes}</Typography>
+            </Box>
+          </>
+        )}
+
+        {/* Thanh toán */}
+        <Typography variant="subtitle2" fontWeight={700} color="text.secondary" mt={1.5} mb={0.5} textTransform="uppercase" fontSize="0.68rem" letterSpacing={1}>
+          Thanh toán
+        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, py: 1 }}>
+          <Typography variant="h6" fontWeight={800} color="primary.main">
+            {formatVND(order.price)}
+          </Typography>
+          <Chip
+            label={order.payment_method === 'CASH' ? '💵 Tiền mặt' : '🏦 Chuyển khoản'}
+            size="small" sx={{ fontWeight: 700, fontSize: '0.72rem' }}
+          />
+        </Box>
+
+        {/* Ảnh giao hàng */}
+        {order.proof_image_url && (
+          <>
+            <Divider sx={{ my: 1.5, borderColor: 'rgba(241,240,239,0.08)' }} />
+            <Box component="a" href={order.proof_image_url} target="_blank"
+              sx={{ color: 'secondary.main', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              📷 Xem ảnh giao hàng →
+            </Box>
+          </>
+        )}
+
+        {/* Tài xế */}
+        <Divider sx={{ my: 1.5, borderColor: 'rgba(241,240,239,0.08)' }} />
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Avatar sx={{ width: 32, height: 32, bgcolor: 'rgba(245,158,11,0.15)', color: 'primary.main', fontSize: '0.8rem' }}>
+            {order.drivers?.full_name?.[0] || '?'}
+          </Avatar>
+          <Box>
+            <Typography variant="caption" color="text.disabled">Tài xế phụ trách</Typography>
+            <Typography variant="body2" fontWeight={700}>
+              {order.drivers?.full_name || <span style={{ color: '#5a5855', fontStyle: 'italic' }}>Chưa gán tài xế</span>}
+            </Typography>
+          </Box>
+        </Box>
+      </DialogContent>
+
+      <DialogActions sx={{ px: 3, pb: 2, gap: 1 }}>
+        {order.payment_method === 'TRANSFER' && order.status !== 'COMPLETED' && (
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<QrCodeRoundedIcon />}
+            onClick={() => { onClose(); onQR(order); }}
+            sx={{ color: 'secondary.main', borderColor: 'rgba(6,182,212,0.3)', fontSize: '0.78rem' }}
+          >
+            VietQR
+          </Button>
+        )}
+        {order.status === 'PENDING' && (
+          <Button
+            variant="contained"
+            size="small"
+            startIcon={<PersonPinRoundedIcon />}
+            onClick={() => { onClose(); onDispatch(order); }}
+            sx={{
+              bgcolor: 'rgba(251,146,60,0.15)', color: '#fb923c',
+              border: '1px solid rgba(251,146,60,0.4)',
+              fontWeight: 700, fontSize: '0.78rem',
+              '&:hover': { bgcolor: 'rgba(251,146,60,0.25)' },
+              boxShadow: 'none',
+            }}
+          >
+            Phân đơn
+          </Button>
+        )}
+        <Button onClick={onClose} sx={{ color: 'text.secondary', ml: 'auto' }}>Đóng</Button>
+      </DialogActions>
+    </Dialog>
+  );
 }
 
 /* ══════════════════════════════════════════════════
@@ -145,7 +351,10 @@ function DispatchDialog({ order, open, onClose, onDispatched }) {
             <Chip label={order.service_name} size="small"
               sx={{ mb: 0.75, fontSize: '0.68rem', bgcolor: 'rgba(245,158,11,0.12)', color: 'primary.main', fontWeight: 700 }} />
           )}
-          <Typography variant="body2" fontWeight={600}>{order.customer_phone}</Typography>
+          {order.customer_name && (
+            <Typography variant="body2" fontWeight={700}>{order.customer_name}</Typography>
+          )}
+          <Typography variant="body2" fontWeight={600} color="secondary.main">{order.customer_phone}</Typography>
           <Typography variant="caption" color="text.secondary">📍 {order.origin}</Typography>
           <Typography variant="caption" color="text.secondary" display="block">🏁 {order.destination}</Typography>
           <Typography variant="body2" fontWeight={700} color="primary.main" mt={0.5}>{formatVND(order.price)}</Typography>
@@ -265,6 +474,7 @@ export default function OrdersPage() {
   const [error, setError]       = useState('');
   const [qrOrder, setQrOrder]   = useState(null);
   const [dispatchOrder, setDispatchOrder] = useState(null);
+  const [detailOrder, setDetailOrder]     = useState(null);
   const [selectedDriverId, setSelectedDriverId] = useState('ALL');
 
   const fetchOrders = useCallback(async () => {
@@ -312,6 +522,15 @@ export default function OrdersPage() {
 
   const pendingCount = displayedOrders.filter(o => o.status === 'PENDING').length;
 
+  /* ── Grid row click style */
+  const gridSxWithCursor = {
+    ...gridSx,
+    '& .dx-datagrid-rowsview .dx-row': {
+      ...gridSx['& .dx-datagrid-rowsview .dx-row'],
+      cursor: 'pointer',
+    },
+  };
+
   return (
     <Box className="page-enter" sx={{ minHeight: 'calc(100vh - 64px)', py: 3 }}>
       <Container maxWidth="xl">
@@ -324,7 +543,7 @@ export default function OrdersPage() {
             <Typography variant="h5" fontWeight={800} letterSpacing="-0.5px">Đơn Hàng</Typography>
           </Box>
           <Typography variant="body2" color="text.secondary" ml={6}>
-            Theo dõi, quản lý và phân đơn cho shipper
+            Theo dõi, quản lý và phân đơn cho shipper · Nhấn vào đơn để xem chi tiết
           </Typography>
         </Box>
 
@@ -385,39 +604,63 @@ export default function OrdersPage() {
                 <CircularProgress sx={{ color: 'primary.main' }} />
               </Box>
             ) : (
-              <Box sx={gridSx}>
-                <DataGrid dataSource={displayedOrders} keyExpr="id" showBorders={false} showColumnLines={false} showRowLines columnAutoWidth>
-                  <FilterRow visible /><Sorting mode="multiple" /><Paging defaultPageSize={15} />
+              <Box sx={gridSxWithCursor}>
+                <DataGrid
+                  dataSource={displayedOrders}
+                  keyExpr="id"
+                  showBorders={false}
+                  showColumnLines={false}
+                  showRowLines
+                  columnAutoWidth
+                  onRowClick={(e) => setDetailOrder(e.data)}
+                >
+                  <FilterRow visible />
+                  <Sorting mode="multiple" />
+                  <Paging defaultPageSize={15} />
                   <Pager showPageSizeSelector allowedPageSizes={[10,15,30]} showInfo infoText="Trang {0}/{1} ({2} đơn)" />
-                  <Column dataField="id" caption="ID" width={100} allowEditing={false}
-                    cellRender={({value}) => <span style={{ fontSize: '0.75rem', color: '#a09d9a' }}>{value?.slice(0,8)}...</span>} />
-                  <Column dataField="customer_phone" caption="Khách hàng" width={130} />
-                  <Column dataField="service_name" caption="Dịch vụ" width={130}
-                    cellRender={({value}) => value
-                      ? <Chip label={value} size="small" sx={{ fontSize: '0.68rem', height: 20, bgcolor: 'rgba(245,158,11,0.12)', color: 'primary.main', fontWeight: 600 }} />
-                      : <span style={{color:'#5a5855',fontSize:'0.78rem'}}>—</span>} />
-                  <Column dataField="origin" caption="Điểm đón" minWidth={140}
-                    cellRender={({value}) => <span style={{ fontSize: '0.82rem' }}>{value}</span>} />
-                  <Column dataField="destination" caption="Điểm đến" minWidth={140}
-                    cellRender={({value}) => <span style={{ fontSize: '0.82rem' }}>{value}</span>} />
-                  <Column dataField="notes" caption="Ghi chú" minWidth={140}
-                    cellRender={({value}) => value
-                      ? <span style={{ fontSize: '0.8rem', color: '#a5f3fc' }}>📝 {value}</span>
-                      : <span style={{color:'#5a5855',fontSize:'0.78rem'}}>—</span>} />
-                  <Column dataField="price" caption="Cước phí" width={130} alignment="right" cellRender={({value}) => <CurrencyCell value={value} />} />
-                  <Column dataField="payment_method" caption="Thanh toán" width={120}
-                    cellRender={({value}) => <Chip label={value === 'CASH' ? '💵 Tiền mặt' : '🏦 CK'} size="small" sx={{ fontSize: '0.72rem', fontWeight: 700 }} />} />
-                  <Column dataField="status" caption="Trạng thái" width={130} cellRender={({value}) => <OrderStatusChip value={value} />} />
-                  <Column dataField="drivers.full_name" caption="Tài xế" width={140}
-                    cellRender={({data}) => <span>{data.drivers?.full_name || <span style={{color:'#5a5855'}}>Chưa gán</span>}</span>} />
 
-                  {/* Nút Phân đơn — chỉ hiện khi PENDING */}
-                  <Column caption="Phân đơn" width={130} allowFiltering={false} allowSorting={false}
-                    cellRender={({data}) => data.status === 'PENDING' ? (
+                  {/* Khách hàng: tên + phone */}
+                  <Column
+                    caption="Khách hàng"
+                    minWidth={150}
+                    allowSorting={false}
+                    cellRender={({ data }) => (
+                      <Box>
+                        {data.customer_name
+                          ? <Typography variant="body2" fontWeight={700} noWrap>{data.customer_name}</Typography>
+                          : null
+                        }
+                        <Typography variant="caption" sx={{ color: '#06b6d4', display: 'block' }}>
+                          📞 {data.customer_phone}
+                        </Typography>
+                      </Box>
+                    )}
+                  />
+
+                  <Column dataField="service_name" caption="Dịch vụ" width={130}
+                    cellRender={({ value }) => value
+                      ? <Chip label={value} size="small" sx={{ fontSize: '0.68rem', height: 20, bgcolor: 'rgba(245,158,11,0.12)', color: 'primary.main', fontWeight: 600 }} />
+                      : <span style={{ color: '#5a5855', fontSize: '0.78rem' }}>—</span>} />
+
+                  <Column dataField="price" caption="Cước phí" width={120} alignment="right"
+                    cellRender={({ value }) => <CurrencyCell value={value} />} />
+
+                  <Column dataField="status" caption="Trạng thái" width={130}
+                    cellRender={({ value }) => <OrderStatusChip value={value} />} />
+
+                  <Column dataField="drivers.full_name" caption="Tài xế" width={140}
+                    cellRender={({ data }) => (
+                      <span>{data.drivers?.full_name || <span style={{ color: '#5a5855' }}>Chưa gán</span>}</span>
+                    )} />
+
+                  {/* Nút Phân đơn — thao tác nhanh ở ngoài */}
+                  <Column caption="Phân đơn" width={120} allowFiltering={false} allowSorting={false}
+                    cellRender={({ data }) => data.status === 'PENDING' ? (
                       <Button
-                        size="small" variant="outlined"
+                        size="small"
+                        variant="outlined"
                         startIcon={<PersonPinRoundedIcon sx={{ fontSize: '14px !important' }} />}
-                        onClick={() => setDispatchOrder(data)}
+                        onClick={(e) => { e.stopPropagation(); setDispatchOrder(data); }}
                         sx={{
                           fontSize: '0.7rem', fontWeight: 700, py: 0.25,
                           color: '#fb923c', borderColor: 'rgba(251,146,60,0.4)',
@@ -429,46 +672,7 @@ export default function OrdersPage() {
                     ) : null}
                   />
 
-                  {/* GPS Check-in */}
-                  <Column caption="📍 GPS Đón" width={140} allowFiltering={false} allowSorting={false}
-                    cellRender={({data}) => data.pickup_checkin_lat
-                      ? (
-                        <Box component="a"
-                          href={`https://www.google.com/maps?q=${data.pickup_checkin_lat},${data.pickup_checkin_lng}`}
-                          target="_blank" rel="noopener noreferrer"
-                          sx={{ color: '#fb923c', fontSize: '0.75rem', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
-                        >
-                          📍 {Number(data.pickup_checkin_lat).toFixed(4)},{Number(data.pickup_checkin_lng).toFixed(4)}
-                        </Box>
-                      ) : <span style={{color:'#5a5855',fontSize:'0.78rem'}}>—</span>}
-                  />
-                  <Column caption="🏁 GPS Giao" width={140} allowFiltering={false} allowSorting={false}
-                    cellRender={({data}) => data.delivery_checkin_lat
-                      ? (
-                        <Box component="a"
-                          href={`https://www.google.com/maps?q=${data.delivery_checkin_lat},${data.delivery_checkin_lng}`}
-                          target="_blank" rel="noopener noreferrer"
-                          sx={{ color: '#4ade80', fontSize: '0.75rem', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
-                        >
-                          🏁 {Number(data.delivery_checkin_lat).toFixed(4)},{Number(data.delivery_checkin_lng).toFixed(4)}
-                        </Box>
-                      ) : <span style={{color:'#5a5855',fontSize:'0.78rem'}}>—</span>}
-                  />
-                  <Column caption="QR" width={110} allowFiltering={false} allowSorting={false}
-                    cellRender={({data}) => data.payment_method === 'TRANSFER' && data.status !== 'COMPLETED' ? (
-                      <Button size="small" startIcon={<QrCodeRoundedIcon sx={{ fontSize: '14px !important' }} />}
-                        sx={{ fontSize: '0.7rem', color: 'secondary.main', borderColor: 'rgba(6,182,212,0.3)', py: 0.25 }}
-                        variant="outlined" onClick={() => setQrOrder(data)}>
-                        VietQR
-                      </Button>
-                    ) : null}
-                  />
-                  <Column dataField="proof_image_url" caption="Ảnh giao hàng" width={130}
-                    cellRender={({value}) => value
-                      ? <Box component="a" href={value} target="_blank" sx={{ color: 'secondary.main', fontSize: '0.78rem' }}>Xem ảnh</Box>
-                      : <span style={{color:'#5a5855',fontSize:'0.78rem'}}>Chưa có</span>}
-                  />
-                  <Column dataField="created_at" caption="Tạo lúc" width={160} dataType="datetime" format="dd/MM/yyyy HH:mm" />
+                  <Column dataField="created_at" caption="Tạo lúc" width={150} dataType="datetime" format="dd/MM HH:mm" />
                 </DataGrid>
               </Box>
             )}
@@ -476,7 +680,26 @@ export default function OrdersPage() {
         </Card>
       </Container>
 
-      {/* Dialogs */}
+      {/* Dialog Chi Tiết Đơn */}
+      <OrderDetailDialog
+        order={detailOrder}
+        open={!!detailOrder}
+        onClose={() => setDetailOrder(null)}
+        onDispatch={(o) => setDispatchOrder(o)}
+        onQR={(o) => setQrOrder(o)}
+      />
+
+      {/* Dialog Phân Đơn */}
+      {dispatchOrder && (
+        <DispatchDialog
+          order={dispatchOrder}
+          open={!!dispatchOrder}
+          onClose={() => setDispatchOrder(null)}
+          onDispatched={fetchOrders}
+        />
+      )}
+
+      {/* Dialog VietQR */}
       {qrOrder && (
         <VietQRDialog
           open={!!qrOrder}
@@ -484,15 +707,6 @@ export default function OrdersPage() {
           amount={qrOrder.price}
           description={`BeeShip ${qrOrder.id?.slice(0, 8)}`}
           title={`VietQR — ${qrOrder.customer_phone}`}
-        />
-      )}
-
-      {dispatchOrder && (
-        <DispatchDialog
-          order={dispatchOrder}
-          open={!!dispatchOrder}
-          onClose={() => setDispatchOrder(null)}
-          onDispatched={fetchOrders}
         />
       )}
     </Box>
